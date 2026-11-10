@@ -13,40 +13,89 @@ from firebase_admin import credentials, firestore
 import streamlit as st
 
 
+# ---------------------------------------------------------
+# FIREBASE / FIRESTORE INITIALIZATION
+# ---------------------------------------------------------
+
 @st.cache_resource(show_spinner=False)
 def get_firestore_client():
-    """Initialize Firebase Admin and return the Firestore client."""
+    """
+    Initialize Firebase Admin and return Firestore client.
 
-    project_root = Path(__file__).resolve().parent
-
-    service_account_path = (
-        project_root
-        / ".streamlit"
-        / "firebase-service-account.json"
-    )
-
-    if not service_account_path.exists():
-        raise FileNotFoundError(
-            f"Firebase service-account file not found: {service_account_path}"
-        )
+    Supports:
+    1. Streamlit Community Cloud using st.secrets
+    2. Local development using service-account JSON
+    """
 
     try:
+        # Reuse an already initialized Firebase application
         app = firebase_admin.get_app()
 
     except ValueError:
-        cred = credentials.Certificate(str(service_account_path))
+
+        # -------------------------------------------------
+        # OPTION 1: STREAMLIT CLOUD SECRETS
+        # -------------------------------------------------
+
+        if "firebase_service_account" in st.secrets:
+
+            service_account_info = dict(
+                st.secrets["firebase_service_account"]
+            )
+
+            cred = credentials.Certificate(
+                service_account_info
+            )
+
+        # -------------------------------------------------
+        # OPTION 2: LOCAL DEVELOPMENT JSON FILE
+        # -------------------------------------------------
+
+        else:
+
+            project_root = Path(__file__).resolve().parent
+
+            service_account_path = (
+                project_root
+                / ".streamlit"
+                / "firebase-service-account.json"
+            )
+
+            if not service_account_path.exists():
+                raise FileNotFoundError(
+                    "Firebase service-account credentials not found. "
+                    "Configure firebase_service_account in Streamlit "
+                    "Cloud Secrets or provide the local JSON file at: "
+                    f"{service_account_path}"
+                )
+
+            cred = credentials.Certificate(
+                str(service_account_path)
+            )
+
+        # Initialize Firebase Admin
         app = firebase_admin.initialize_app(cred)
 
     return firestore.client(app=app)
 
 
-def save_user_profile(uid: str, email: str, display_name: str = ""):
+# ---------------------------------------------------------
+# USER PROFILE MANAGEMENT
+# ---------------------------------------------------------
+
+def save_user_profile(
+    uid: str,
+    email: str,
+    display_name: str = ""
+):
     """Create or update the signed-in user's Firestore profile."""
 
     db = get_firestore_client()
+
     ref = db.collection("users").document(uid)
 
     existing = ref.get()
+
     now = datetime.now(timezone.utc)
 
     payload = {
@@ -76,6 +125,10 @@ def get_user_profile(uid: str):
     )
 
 
+# ---------------------------------------------------------
+# FORECAST HISTORY MANAGEMENT
+# ---------------------------------------------------------
+
 def save_forecast_run(
     uid: str,
     model_name: str,
@@ -95,6 +148,7 @@ def save_forecast_run(
     }
 
     doc_ref = db.collection("forecast_runs").document()
+
     doc_ref.set(payload)
 
     return doc_ref.id
