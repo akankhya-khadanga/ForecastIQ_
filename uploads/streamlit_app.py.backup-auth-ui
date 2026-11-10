@@ -1,0 +1,674 @@
+from __future__ import annotations
+
+import os
+import html
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+from dotenv import load_dotenv
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_DATA = PROJECT_DIR / "ecommerce_sales_2024_2025.csv"
+UPLOAD_DIR = PROJECT_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+load_dotenv(PROJECT_DIR / ".env")
+
+st.set_page_config(
+    page_title="ForecastIQ | Sales Intelligence",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# A small custom theme that remains readable in Streamlit's light theme.
+st.markdown(
+    """
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+      :root { color-scheme: dark; }
+      html, body, [class*="css"] { font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; }
+      .stApp { background: #0a0e0f; color: #f3f7f5; }
+      .block-container { padding-top: 1.35rem; padding-bottom: 3rem; max-width: 1600px; }
+      [data-testid="stHeader"] { background: rgba(10,14,15,.92); }
+      [data-testid="stToolbar"] { right: 1rem; }
+      [data-testid="stSidebar"] { background: linear-gradient(180deg,#0d1213 0%,#101819 100%); border-right: 1px solid rgba(255,255,255,.075); }
+      [data-testid="stSidebar"] * { color: #f3f7f5; }
+      [data-testid="stSidebar"] [data-baseweb="select"] > div,
+      [data-testid="stSidebar"] [data-baseweb="input"] > div,
+      [data-testid="stSidebar"] [data-baseweb="textarea"] > div { background:#111819; border-color:#263230; }
+      [data-testid="stSidebar"] input { color: #f3f7f5; }
+      [data-testid="stSidebar"] label, [data-testid="stSidebar"] p { color: #a0aca7; }
+      [data-testid="stMetric"] { background: linear-gradient(145deg,#101617 0%,#111819 100%);
+        border: 1px solid rgba(255,255,255,.075); padding: 17px 18px; border-radius: 14px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.14); min-height: 118px; }
+      [data-testid="stMetricLabel"] { color: #a0aca7; font-weight: 600; font-size: .84rem; }
+      [data-testid="stMetricValue"] { color: #f3f7f5; font-weight: 750; letter-spacing: -.035em; }
+      [data-testid="stMetricDelta"] { font-size: .8rem; }
+      .brand-mark { display:inline-flex; width:34px; height:34px; align-items:center; justify-content:center; margin:2px 9px 7px 0; border-radius:9px; background:#22c55e; color:#06110a; font-size:19px; font-weight:900; vertical-align:middle; }
+      .brand-title { display:inline-block; color:#f3f7f5; font-size:1.22rem; font-weight:800; vertical-align:middle; letter-spacing:-.04em; }
+      .brand-title span { color:#00e676; }
+      .hero { padding: 28px 30px; border-radius: 16px; margin: 0 0 18px 0;
+        background: radial-gradient(circle at 92% 8%,rgba(0,230,118,.13),transparent 28%),
+        linear-gradient(115deg,#0d1213 0%,#101819 62%,#12271d 100%);
+        color: white; border:1px solid rgba(34,197,94,.20); box-shadow: 0 14px 36px rgba(0,0,0,.18); }
+      .hero-kicker { font-size:.72rem; text-transform:uppercase; letter-spacing:.16em;
+        color:#22c55e; font-weight:800; margin-bottom:9px; }
+      .hero h1 { margin:0; font-size:clamp(1.75rem,3vw,2.45rem); letter-spacing:-.045em; color:#f3f7f5; }
+      .hero p { margin:9px 0 0; color:#a0aca7; font-size:.96rem; max-width:820px; line-height:1.65; }
+      .hero-chip { display:inline-block; margin-top:17px; margin-right:8px; padding:6px 10px;
+        background:rgba(34,197,94,.07); border:1px solid rgba(34,197,94,.22); border-radius:7px; color:#c8f7d8; font-size:.73rem; }
+      .section-note { color:#a0aca7; font-size:.88rem; }
+      .insight-card { height:100%; padding:16px 17px; border-radius:12px; background:#101617;
+        border:1px solid rgba(255,255,255,.075); box-shadow:0 8px 22px rgba(0,0,0,.12); }
+      .insight-label { font-size:.70rem; color:#66736e; font-weight:700; text-transform:uppercase; letter-spacing:.09em; }
+      .insight-value { font-size:1.08rem; font-weight:750; color:#f3f7f5; margin-top:7px; }
+      .insight-detail { font-size:.81rem; color:#a0aca7; margin-top:4px; }
+      h1, h2, h3, h4 { color:#f3f7f5; letter-spacing:-.025em; }
+      p, .stMarkdown, [data-testid="stCaptionContainer"] { color:#a0aca7; }
+      div[data-testid="stTabs"] { margin-top: 1.25rem; }
+      div[data-testid="stTabs"] button { font-weight:700; color:#a0aca7; border-radius:8px 8px 0 0; }
+      div[data-testid="stTabs"] button[aria-selected="true"] { color:#00e676; border-bottom-color:#22c55e; }
+      div[data-testid="stPlotlyChart"] { background:#101617; border:1px solid rgba(255,255,255,.075);
+        border-radius:13px; padding:7px; box-shadow:0 8px 22px rgba(0,0,0,.12); }
+      div[data-testid="stDataFrame"] { border:1px solid rgba(255,255,255,.10); border-radius:11px; overflow:hidden; }
+      [data-testid="stAlert"] { border-radius:10px; }
+      .stButton button, .stDownloadButton button { border-radius:8px; font-weight:700; border:1px solid rgba(34,197,94,.35); }
+      .stButton button[kind="primary"] { background:#22c55e; color:#06110a; }
+      [data-baseweb="select"] > div { background:#111819; border-color:#263230; }
+      input, textarea { background:#111819 !important; color:#f3f7f5 !important; }
+      hr { border-color:rgba(255,255,255,.09); }
+      ::selection { background:rgba(34,197,94,.35); }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# -----------------------------------------------------------------------------
+# Firebase authentication gate: no dashboard content is shown before login.
+# -----------------------------------------------------------------------------
+def _firebase_settings():
+    try:
+        api_key = str(st.secrets["firebase"]["api_key"]).strip()
+
+        if not api_key or "YOUR_" in api_key:
+            return None
+
+        return api_key
+
+    except Exception:
+        return None
+
+
+def _activate_session(auth_payload: dict, display_name: str = ""):
+    from firebase_db import get_firestore_client, save_user_profile
+    from firebase_admin import auth as firebase_admin_auth
+
+    # Initializing the Admin SDK also validates the service-account configuration.
+    get_firestore_client()
+    decoded = firebase_admin_auth.verify_id_token(auth_payload["idToken"])
+    uid = decoded["uid"]
+    email = decoded.get("email", auth_payload.get("email", ""))
+    save_user_profile(uid, email, display_name)
+    st.session_state["forecastiq_auth"] = {
+        "uid": uid,
+        "email": email,
+        "display_name": display_name,
+        "id_token": auth_payload["idToken"],
+        "refresh_token": auth_payload.get("refreshToken", ""),
+    }
+
+
+def _ensure_authenticated(api_key: str) -> bool:
+    from firebase_db import get_firestore_client
+    from firebase_admin import auth as firebase_admin_auth
+    from firebase_auth import refresh_session, FirebaseAuthError
+
+    session = st.session_state.get("forecastiq_auth")
+    if not session:
+        return False
+    try:
+        get_firestore_client()
+        firebase_admin_auth.verify_id_token(session["id_token"])
+        return True
+    except firebase_admin_auth.ExpiredIdTokenError:
+        try:
+            refreshed = refresh_session(api_key, session.get("refresh_token", ""))
+            firebase_admin_auth.verify_id_token(refreshed["id_token"])
+            session["id_token"] = refreshed["id_token"]
+            session["refresh_token"] = refreshed.get("refresh_token", session.get("refresh_token", ""))
+            st.session_state["forecastiq_auth"] = session
+            return True
+        except Exception:
+            st.session_state.pop("forecastiq_auth", None)
+            return False
+    except Exception:
+        st.session_state.pop("forecastiq_auth", None)
+        return False
+
+
+def _render_authentication(api_key: str):
+    from firebase_auth import sign_in, sign_up, FirebaseAuthError
+    from firebase_db import save_user_profile
+
+    st.markdown(
+        "<div style='max-width:760px;margin:7vh auto 0;padding:34px;border:1px solid #244334;"
+        "border-radius:20px;background:linear-gradient(135deg,#101819,#10271d);'>"
+        "<div style='color:#22c55e;font-weight:800;letter-spacing:.14em;font-size:.75rem'>SALES INTELLIGENCE PLATFORM</div>"
+        "<h1 style='margin:.45rem 0;color:#f3f7f5'>Welcome to Forecast<span style='color:#00e676'>IQ</span></h1>"
+        "<p style='color:#a0aca7'>Sign in to access your sales analytics and forecasting workspace.</p></div>",
+        unsafe_allow_html=True,
+    )
+    left, center, right = st.columns([1, 1.25, 1])
+    with center:
+        login_tab, signup_tab = st.tabs(["Login", "Create account"])
+        with login_tab:
+            with st.form("forecastiq_login_form"):
+                email = st.text_input("Email address", key="login_email", placeholder="you@example.com")
+                password = st.text_input("Password", type="password", key="login_password")
+                submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
+            if submitted:
+                if not email.strip() or not password:
+                    st.error("Enter both your email and password.")
+                else:
+                    try:
+                        payload = sign_in(api_key, email.strip(), password)
+                        _activate_session(payload)
+                        st.success("Login successful. Opening your dashboard…")
+                        st.rerun()
+                    except FirebaseAuthError as exc:
+                        st.error(str(exc))
+                    except Exception as exc:
+                        st.error("Could not complete login. Check your Firebase setup and try again.")
+                        st.caption(str(exc))
+        with signup_tab:
+            with st.form("forecastiq_signup_form"):
+                name = st.text_input("Full name", key="signup_name")
+                email = st.text_input("Email address", key="signup_email", placeholder="you@example.com")
+                password = st.text_input("Password", type="password", key="signup_password", help="At least 6 characters.")
+                confirm = st.text_input("Confirm password", type="password", key="signup_confirm")
+                submitted = st.form_submit_button("Create account", type="primary", use_container_width=True)
+            if submitted:
+                if not name.strip() or not email.strip() or not password:
+                    st.error("Please complete all fields.")
+                elif password != confirm:
+                    st.error("The passwords do not match.")
+                elif len(password) < 6:
+                    st.error("Use a password with at least 6 characters.")
+                else:
+                    try:
+                        payload = sign_up(api_key, email.strip(), password)
+                        _activate_session(payload, name.strip())
+                        st.success("Your account has been created. Opening your dashboard…")
+                        st.rerun()
+                    except FirebaseAuthError as exc:
+                        st.error(str(exc))
+                    except Exception as exc:
+                        st.error("Login succeeded, but session setup failed.")
+                        st.exception(exc)
+
+
+firebase_api_key = _firebase_settings()
+if not firebase_api_key:
+    st.markdown("## Connect Firebase to enable ForecastIQ login")
+    st.warning("Firebase credentials are not configured yet. The dashboard is protected until you add your own Firebase settings.")
+    st.markdown(
+        "1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com/).\n"
+        "2. Enable **Authentication → Sign-in method → Email/Password**.\n"
+        "3. Create a **Cloud Firestore** database.\n"
+        "4. Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in the values.\n"
+        "5. Get the Web API key from **Project settings → General** and the service-account key from **Project settings → Service accounts**."
+    )
+    st.stop()
+
+if not _ensure_authenticated(firebase_api_key):
+    _render_authentication(firebase_api_key)
+    st.stop()
+
+current_user = st.session_state["forecastiq_auth"]
+
+
+def normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """Validate and standardize uploaded CSV columns for the ML pipeline."""
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    # Accept common variations in column names.
+    rename = {}
+    for col in df.columns:
+        key = col.strip().lower().replace("_", " ")
+        if key in {"date", "order date", "transaction date", "sales date"}:
+            rename[col] = "Order Date"
+        elif key in {"sales", "revenue", "amount", "total sales"}:
+            rename[col] = "Sales"
+        elif key in {"quantity", "qty", "units"}:
+            rename[col] = "Quantity"
+        elif key in {"unit price", "price", "unitprice"}:
+            rename[col] = "Unit Price"
+        elif key in {"category", "product category"}:
+            rename[col] = "Category"
+        elif key in {"region", "location", "market"}:
+            rename[col] = "Region"
+        elif key in {"profit", "net profit"}:
+            rename[col] = "Profit"
+        elif key in {"order id", "orderid", "transaction id"}:
+            rename[col] = "Order ID"
+        elif key in {"payment method", "payment"}:
+            rename[col] = "Payment Method"
+        elif key in {"day type", "daytype"}:
+            rename[col] = "Day Type"
+    df = df.rename(columns=rename)
+    required = {"Order Date", "Sales", "Quantity"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError("CSV is missing required column(s): " + ", ".join(missing))
+
+    df["Order Date"] = pd.to_datetime(df["Order Date"], dayfirst=True, errors="coerce")
+    for col in ["Sales", "Quantity"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "Unit Price" not in df:
+        df["Unit Price"] = np.where(df["Quantity"].fillna(0) != 0,
+                                    df["Sales"] / df["Quantity"].replace(0, np.nan), 0)
+    else:
+        df["Unit Price"] = pd.to_numeric(df["Unit Price"], errors="coerce")
+    if "Profit" not in df:
+        df["Profit"] = 0.0
+    else:
+        df["Profit"] = pd.to_numeric(df["Profit"], errors="coerce").fillna(0)
+    for col, default in [("Category", "Uncategorized"), ("Region", "Unknown"),
+                         ("Payment Method", "Unknown"), ("Day Type", "Unknown")]:
+        if col not in df:
+            df[col] = default
+        df[col] = df[col].fillna(default).astype(str)
+    if "Order ID" not in df:
+        df["Order ID"] = [f"ROW-{i + 1:06d}" for i in range(len(df))]
+    df = df.dropna(subset=["Order Date", "Sales", "Quantity"]).copy()
+    df = df.drop_duplicates().sort_values("Order Date").reset_index(drop=True)
+    if df.empty:
+        raise ValueError("The CSV contains no valid rows after cleaning.")
+    return df
+
+
+@st.cache_resource(show_spinner="Training forecasting models on the sales data…")
+def load_service(data_path: str, modified_at: float):
+    # modified_at is part of the cache key so a newly uploaded dataset retrains.
+    import sys
+    if str(PROJECT_DIR) not in sys.path:
+        sys.path.insert(0, str(PROJECT_DIR))
+    from ml_service import MLService
+    service = MLService(data_path=data_path)
+    if service.raw_df is None or service.raw_df.empty or not service.is_trained:
+        raise RuntimeError("The model service could not load/train on this dataset.")
+    return service
+
+
+def money(value: float) -> str:
+    return f"₹{value:,.0f}"
+
+
+def apply_dashboard_theme(fig):
+    """Apply the same near-black surfaces and green accent as templates/index.html."""
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="#101617",
+        plot_bgcolor="#101617",
+        font=dict(family="Inter, sans-serif", color="#dce7e1", size=12),
+        title_font=dict(family="Inter, sans-serif", color="#f3f7f5", size=16),
+        margin=dict(l=12, r=12, t=54, b=12),
+        legend_title_text="",
+        colorway=["#22c55e", "#00e676", "#84cc16", "#38bdf8", "#f59e0b", "#a78bfa", "#fb7185"],
+        hoverlabel=dict(bgcolor="#0d1213", bordercolor="#22c55e", font_color="#f3f7f5"),
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, linecolor="#263230", tickfont_color="#a0aca7")
+    fig.update_yaxes(showgrid=True, gridcolor="#263230", zeroline=False, linecolor="#263230", tickfont_color="#a0aca7")
+    return fig
+
+
+def make_line_chart(df: pd.DataFrame, x: str, y: str, title: str,
+                    color: Optional[str] = None, markers: bool = False):
+    fig = px.line(df, x=x, y=y, color=color, markers=markers, title=title,
+                  template="plotly_dark", color_discrete_sequence=["#22c55e", "#00e676", "#f59e0b", "#38bdf8"])
+    apply_dashboard_theme(fig)
+    fig.update_layout(hovermode="x unified")
+    fig.update_yaxes(tickprefix="₹", tickformat=",.0f")
+    return fig
+
+
+st.sidebar.markdown("<div class='brand-mark'>F</div><div class='brand-title'>Forecast<span>IQ</span></div>", unsafe_allow_html=True)
+st.sidebar.caption("SALES INTELLIGENCE PLATFORM")
+st.sidebar.caption(f"Signed in: {current_user.get('email', '')}")
+if st.sidebar.button("Logout", use_container_width=True):
+    st.session_state.pop("forecastiq_auth", None)
+    st.rerun()
+st.sidebar.divider()
+
+st.sidebar.markdown("### Data source")
+st.sidebar.info("Using the default bundled sales dataset.")
+
+data_path = DEFAULT_DATA
+
+if not data_path.exists():
+    st.sidebar.error("Default sales dataset not found.")
+    st.stop()
+
+
+if not data_path.exists():
+    st.error(f"Sales dataset not found: {data_path}")
+    st.info("Place ecommerce_sales_2024_2025.csv in the project folder, or upload a CSV from the sidebar.")
+    st.stop()
+
+try:
+    service = load_service(str(data_path), data_path.stat().st_mtime)
+    raw = service.raw_df.copy()
+    raw["Order Date"] = pd.to_datetime(raw["Order Date"], errors="coerce")
+except Exception as exc:
+    st.error("The forecasting pipeline could not start.")
+    st.exception(exc)
+    st.stop()
+
+st.markdown(
+    "<div class='hero'><div class='hero-kicker'>ForecastIQ / Business intelligence</div>"
+    "<h1>Know your sales. Plan your next move.</h1>"
+    "<p>A live view of revenue, profitability, product performance, and machine-learning forecasts — built from your sales data.</p>"
+    "<span class='hero-chip'>● Analytics overview</span><span class='hero-chip'>✦ ML forecasting</span>"
+    "<span class='hero-chip'>↗ Interactive reports</span></div>",
+    unsafe_allow_html=True,
+)
+meta1, meta2, meta3 = st.columns([1.2, 1, 1])
+meta1.caption(f"**DATASET**  ·  {data_path.name}")
+meta2.caption(f"**TRANSACTIONS**  ·  {len(raw):,} valid rows")
+meta3.caption(f"**COVERAGE**  ·  {raw['Order Date'].min():%d %b %Y} – {raw['Order Date'].max():%d %b %Y}")
+
+# Global filters
+with st.sidebar:
+    st.markdown("### Filters")
+    min_date = raw["Order Date"].min().date()
+    max_date = raw["Order Date"].max().date()
+    date_range = st.date_input("Order date range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+    categories = sorted(raw["Category"].dropna().astype(str).unique().tolist())
+    chosen_categories = st.multiselect("Category", categories, default=categories)
+    regions = sorted(raw["Region"].dropna().astype(str).unique().tolist())
+    chosen_regions = st.multiselect("Region", regions, default=regions)
+
+if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
+    start_date, end_date = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
+else:
+    start_date, end_date = pd.Timestamp(min_date), pd.Timestamp(max_date)
+filtered = raw[
+    raw["Order Date"].between(start_date, end_date + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1))
+    & raw["Category"].astype(str).isin(chosen_categories)
+    & raw["Region"].astype(str).isin(chosen_regions)
+].copy()
+if filtered.empty:
+    st.warning("No transactions match these filters. Select a wider date range or more categories/regions.")
+    st.stop()
+
+# KPIs and previous-period comparison. The comparison uses an equal-length period immediately before the selected start date.
+sales_total = float(filtered["Sales"].sum())
+profit_total = float(filtered["Profit"].sum())
+orders = int(filtered["Order ID"].nunique())
+units = int(filtered["Quantity"].sum())
+margin = (profit_total / sales_total * 100) if sales_total else 0
+period_days = max(1, (end_date.normalize() - start_date.normalize()).days + 1)
+previous_start = start_date - pd.Timedelta(days=period_days)
+previous_end = start_date - pd.Timedelta(microseconds=1)
+previous = raw[
+    raw["Order Date"].between(previous_start, previous_end)
+    & raw["Category"].astype(str).isin(chosen_categories)
+    & raw["Region"].astype(str).isin(chosen_regions)
+].copy()
+
+def pct_delta(current, prior):
+    if prior is None or pd.isna(prior) or float(prior) == 0:
+        return None
+    return (float(current) - float(prior)) / abs(float(prior)) * 100
+
+previous_sales = float(previous["Sales"].sum()) if not previous.empty else None
+previous_profit = float(previous["Profit"].sum()) if not previous.empty else None
+previous_orders = int(previous["Order ID"].nunique()) if not previous.empty else None
+previous_units = int(previous["Quantity"].sum()) if not previous.empty else None
+previous_margin = (previous_profit / previous_sales * 100) if previous_sales else None
+
+def delta_label(current, prior, suffix="%"):
+    change = pct_delta(current, prior) if prior is not None else None
+    return f"{change:+.1f}{suffix} vs prior period" if change is not None else None
+
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Total revenue", money(sales_total), delta_label(sales_total, previous_sales))
+k2.metric("Total profit", money(profit_total), delta_label(profit_total, previous_profit))
+k3.metric("Orders", f"{orders:,}", delta_label(orders, previous_orders))
+k4.metric("Units sold", f"{units:,}", delta_label(units, previous_units))
+margin_delta = f"{margin - previous_margin:+.1f} pp vs prior period" if previous_margin is not None else None
+k5.metric("Profit margin", f"{margin:.1f}%", margin_delta)
+if previous.empty:
+    st.caption("Period-over-period deltas appear when an equal-length earlier period is available in the dataset.")
+
+# Build chart-ready aggregations
+filtered["Month"] = filtered["Order Date"].dt.to_period("M").dt.to_timestamp()
+monthly = filtered.groupby("Month", as_index=False).agg(Sales=("Sales", "sum"), Profit=("Profit", "sum"), Orders=("Order ID", "nunique"))
+category_sales = filtered.groupby("Category", as_index=False)["Sales"].sum().sort_values("Sales", ascending=False)
+region_sales = filtered.groupby("Region", as_index=False).agg(Sales=("Sales", "sum"), Profit=("Profit", "sum")).sort_values("Sales", ascending=False)
+
+# Concise executive insights make the charts easier to act on.
+st.markdown("### Executive snapshot")
+ins1, ins2, ins3, ins4 = st.columns(4)
+top_category = category_sales.iloc[0] if not category_sales.empty else None
+top_region = region_sales.iloc[0] if not region_sales.empty else None
+peak_month = monthly.loc[monthly["Sales"].idxmax()] if not monthly.empty else None
+avg_order_value = sales_total / orders if orders else 0
+with ins1:
+    st.markdown(f"<div class='insight-card'><div class='insight-label'>Top category</div><div class='insight-value'>{html.escape(str(top_category['Category'])) if top_category is not None else '—'}</div><div class='insight-detail'>{money(float(top_category['Sales'])) if top_category is not None else 'No data'} revenue</div></div>", unsafe_allow_html=True)
+with ins2:
+    st.markdown(f"<div class='insight-card'><div class='insight-label'>Leading region</div><div class='insight-value'>{html.escape(str(top_region['Region'])) if top_region is not None else '—'}</div><div class='insight-detail'>{money(float(top_region['Sales'])) if top_region is not None else 'No data'} revenue</div></div>", unsafe_allow_html=True)
+with ins3:
+    st.markdown(f"<div class='insight-card'><div class='insight-label'>Strongest month</div><div class='insight-value'>{peak_month['Month'].strftime('%b %Y') if peak_month is not None else '—'}</div><div class='insight-detail'>{money(float(peak_month['Sales'])) if peak_month is not None else 'No data'} revenue</div></div>", unsafe_allow_html=True)
+with ins4:
+    st.markdown(f"<div class='insight-card'><div class='insight-label'>Average order value</div><div class='insight-value'>{money(avg_order_value)}</div><div class='insight-detail'>Revenue per unique order</div></div>", unsafe_allow_html=True)
+st.write("")
+
+# Tabs make a fairly information-dense dashboard easier to navigate.
+tab_overview, tab_forecast, tab_products, tab_models, tab_data = st.tabs([" Overview", " Forecast", " Product & Region", " Model Performance", " Transactions"])
+
+with tab_overview:
+    left, right = st.columns([1.65, 1])
+    with left:
+        st.plotly_chart(make_line_chart(monthly, "Month", "Sales", "Monthly revenue trend", markers=True), use_container_width=True)
+    with right:
+        pie = px.pie(category_sales, names="Category", values="Sales", hole=0.58,
+                     title="Revenue by category", template="plotly_dark")
+        pie.update_traces(textposition="inside", textinfo="percent", hovertemplate="%{label}<br>Revenue: ₹%{value:,.0f}<extra></extra>")
+        pie.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17, legend_title_text="")
+        apply_dashboard_theme(pie)
+        st.plotly_chart(pie, use_container_width=True)
+    left, right = st.columns(2)
+    with left:
+        fig = px.bar(monthly, x="Month", y="Profit", title="Monthly profit", template="plotly_dark", color_discrete_sequence=["#22c55e"])
+        fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17)
+        fig.update_yaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+    with right:
+        fig = px.bar(region_sales, x="Region", y="Sales", title="Revenue by region", template="plotly_dark", color="Region")
+        fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17, showlegend=False)
+        fig.update_yaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+    weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    weekday = filtered.assign(Weekday=filtered["Order Date"].dt.day_name()).groupby("Weekday", as_index=False).agg(Sales=("Sales", "sum"), Orders=("Order ID", "nunique"))
+    weekday["Weekday"] = pd.Categorical(weekday["Weekday"], categories=weekday_order, ordered=True)
+    weekday = weekday.sort_values("Weekday")
+    fig = px.bar(weekday, x="Weekday", y="Sales", title="When does your business sell most?", template="plotly_dark", color="Sales", color_continuous_scale=[[0, "#153a29"], [0.5, "#16834a"], [1, "#00e676"]])
+    fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17, coloraxis_showscale=False)
+    fig.update_yaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+    apply_dashboard_theme(fig)
+    st.plotly_chart(fig, use_container_width=True)
+
+with tab_forecast:
+    st.subheader("Daily sales forecast")
+    fc1, fc2 = st.columns([1, 3])
+    with fc1:
+        model_options = {"XGBoost": "xgboost", "Random Forest": "random-forest", "Holt–Winters": "holt-winter", "Seasonal naive": "seasonal-naive"}
+        model_label = st.selectbox("Forecast model", list(model_options.keys()), index=0)
+        horizon = st.slider("Forecast horizon (days)", min_value=7, max_value=183, value=183, step=7)
+        st.caption("Default view covers roughly six months. Forecasts use the complete dataset and are independent of overview filters.")
+    forecast_rows = service.get_forecast_data(model_key=model_options[model_label], future_days=horizon)
+    forecast_df = pd.DataFrame(forecast_rows)
+    forecast_df["date"] = pd.to_datetime(forecast_df["date"])
+    hist_plot = forecast_df[forecast_df["actual"].notna()].tail(180)
+    future_plot = forecast_df[forecast_df["actual"].isna()].copy()
+    with fc2:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=hist_plot["date"], y=hist_plot["actual"], name="Actual sales", mode="lines", line=dict(color="#2563eb", width=2)))
+        # Connect forecast line from the last actual date for a continuous transition.
+        if not hist_plot.empty and not future_plot.empty:
+            boundary = pd.DataFrame({"date": [hist_plot["date"].iloc[-1]], "forecast": [hist_plot["actual"].iloc[-1]]})
+            future_line = pd.concat([boundary, future_plot[["date", "forecast"]]], ignore_index=True)
+        else:
+            future_line = future_plot[["date", "forecast"]]
+        fig.add_trace(go.Scatter(x=future_line["date"], y=future_line["forecast"], name="Forecast", mode="lines", line=dict(color="#f97316", width=2.5, dash="dash")))
+        if not future_plot.empty:
+            fig.add_trace(go.Scatter(x=pd.concat([future_plot["date"], future_plot["date"][::-1]]),
+                                     y=pd.concat([future_plot["upper"], future_plot["lower"][::-1]]),
+                                     fill="toself", fillcolor="rgba(249,115,22,0.14)", line=dict(color="rgba(0,0,0,0)"),
+                                     name="Forecast interval", hoverinfo="skip"))
+        fig.update_layout(title=f"Actual vs {model_label} forecast", template="plotly_dark", margin=dict(l=10, r=10, t=55, b=10), hovermode="x unified", legend_title_text="")
+        fig.update_yaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+    if not future_plot.empty:
+        a, b, c = st.columns(3)
+        a.metric("Forecast total", money(float(future_plot["forecast"].sum())))
+        b.metric("Daily forecast average", money(float(future_plot["forecast"].mean())))
+        c.metric("Forecast end date", future_plot["date"].max().strftime("%d %b %Y"))
+        st.download_button("Download forecast CSV", future_plot.to_csv(index=False).encode("utf-8"), file_name="forecastiq_forecast.csv", mime="text/csv")
+        if st.button("Save forecast to my account", type="primary"):
+            try:
+                from firebase_db import save_forecast_to_firestore
+                saved_id = save_forecast_to_firestore(
+                    current_user["uid"], model_label, future_plot[["date", "forecast", "lower", "upper"]]
+                )
+                st.success(f"Forecast saved to your Firebase account. Run ID: {saved_id}")
+            except Exception as exc:
+                st.error("Could not save this forecast to Firestore. Check your Firebase configuration.")
+                st.caption(str(exc))
+
+with tab_products:
+    left, right = st.columns(2)
+    with left:
+        top_categories = category_sales.head(10).sort_values("Sales", ascending=True)
+        fig = px.bar(top_categories, x="Sales", y="Category", orientation="h", title="Top categories by revenue", template="plotly_dark", color="Sales", color_continuous_scale=[[0, "#153a29"], [0.5, "#16834a"], [1, "#00e676"]])
+        fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17, coloraxis_showscale=False)
+        fig.update_xaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+    with right:
+        fig = px.bar(region_sales.sort_values("Sales"), x="Sales", y="Region", orientation="h", title="Regional sales comparison", template="plotly_dark", color="Sales", color_continuous_scale=[[0, "#153a29"], [0.5, "#16834a"], [1, "#00e676"]])
+        fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17, coloraxis_showscale=False)
+        fig.update_xaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+    scatter_cols = [c for c in ["Quantity", "Sales", "Profit", "Category", "Region"] if c in filtered.columns]
+    if {"Quantity", "Sales"}.issubset(scatter_cols):
+        fig = px.scatter(filtered, x="Quantity", y="Sales", color="Category", size="Profit" if (filtered["Profit"] > 0).any() else None,
+                         hover_data=[c for c in ["Order ID", "Order Date", "Region", "Profit"] if c in filtered.columns],
+                         title="Transaction size vs revenue", template="plotly_dark", opacity=.65)
+        fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17, legend_title_text="Category")
+        fig.update_yaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("#### Best-performing category and region combinations")
+    segments = filtered.groupby(["Category", "Region"], as_index=False).agg(Revenue=("Sales", "sum"), Profit=("Profit", "sum"), Orders=("Order ID", "nunique")).sort_values("Revenue", ascending=False).head(10)
+    st.dataframe(segments, use_container_width=True, hide_index=True, column_config={"Revenue": st.column_config.NumberColumn(format="₹%.2f"), "Profit": st.column_config.NumberColumn(format="₹%.2f")})
+
+with tab_models:
+    st.subheader("Forecast model evaluation")
+    st.caption("Metrics are calculated on a chronological holdout set (the final 20% of prepared daily observations). Lower MAE/RMSE/MAPE is generally better; R² is closer to 1 when predictions explain more variation.")
+    metrics_rows = service.get_models_comparison_data()
+    metrics_df = pd.DataFrame(metrics_rows)
+    if not metrics_df.empty:
+        metrics_df = metrics_df.rename(columns={"name": "Model", "mae": "MAE (₹)", "rmse": "RMSE (₹)", "mape": "MAPE (%)"})
+        st.dataframe(metrics_df, use_container_width=True, hide_index=True, column_config={"MAE (₹)": st.column_config.NumberColumn(format="₹%.2f"), "RMSE (₹)": st.column_config.NumberColumn(format="₹%.2f"), "MAPE (%)": st.column_config.NumberColumn(format="%.1f%%")})
+        best = min(service.metrics.items(), key=lambda item: item[1]["mae"])
+        st.info(f"Best model by holdout MAE: **{best[1]['name']}** (MAE {money(best[1]['mae'])}).")
+        metric_plot = metrics_df.melt(id_vars="Model", value_vars=["MAE (₹)", "RMSE (₹)"], var_name="Metric", value_name="Error")
+        fig = px.bar(metric_plot, x="Model", y="Error", color="Metric", barmode="group", title="Model error comparison", template="plotly_dark")
+        fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17)
+        fig.update_yaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+
+    try:
+        dashboard = service.get_dashboard_results()
+        model_metrics = dashboard["metrics"]
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("XGBoost MAE", money(model_metrics["mae"]), help="Mean absolute error on the chronological holdout set. Lower is better.")
+        m2.metric("XGBoost RMSE", money(model_metrics["rmse"]), help="Root mean squared error on the chronological holdout set. Lower is better.")
+        m3.metric("XGBoost R²", f"{model_metrics['r2']:.3f}", help="Coefficient of determination on the chronological holdout set. Closer to 1 is generally better.")
+        m4.metric("XGBoost MAPE", f"{model_metrics['mape']:.1f}%", help="Mean absolute percentage error. Interpret carefully when actual sales are near zero.")
+        if model_metrics["r2"] < 0:
+            st.warning("The current XGBoost holdout R² is below zero, which means it did not outperform a simple mean-baseline on this test period. Treat the forecast as exploratory and compare it with the other models before relying on it.")
+        forecast_payload = dashboard["forecast"]
+        monthly_fc = pd.DataFrame({"Month": pd.to_datetime(forecast_payload["forecast_dates"]), "Forecast revenue": forecast_payload["forecast_sales"]})
+        if not monthly_fc.empty:
+            fig_fc = px.bar(monthly_fc, x="Month", y="Forecast revenue", title="XGBoost · upcoming monthly revenue outlook (~6 months)", template="plotly_dark", color="Forecast revenue", color_continuous_scale=[[0, "#153a29"], [0.5, "#16834a"], [1, "#00e676"]])
+            fig_fc.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17, coloraxis_showscale=False)
+            fig_fc.update_yaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+            apply_dashboard_theme(fig_fc)
+            st.plotly_chart(fig_fc, use_container_width=True)
+        test = dashboard["test"]
+        test_df = pd.DataFrame({"Date": pd.to_datetime(test["dates"]), "Actual": test["actual"], "Predicted": test["predicted"]})
+        test_daily = test_df.tail(120)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=test_daily["Date"], y=test_daily["Actual"], name="Actual", mode="lines", line=dict(color="#22c55e", width=2.5)))
+        fig.add_trace(go.Scatter(x=test_daily["Date"], y=test_daily["Predicted"], name="XGBoost prediction", mode="lines", line=dict(color="#f59e0b", width=2.5)))
+        fig.update_layout(title="XGBoost: actual vs predicted (holdout sample)", template="plotly_dark", margin=dict(l=10, r=10, t=55, b=10), hovermode="x unified", legend_title_text="")
+        fig.update_yaxes(tickprefix="₹", tickformat=",.0f", gridcolor="#263230")
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+        importance = pd.DataFrame({"Feature": dashboard["feature_importance"]["features"], "Importance": dashboard["feature_importance"]["values"]}).sort_values("Importance", ascending=True).tail(12)
+        fig = px.bar(importance, x="Importance", y="Feature", orientation="h", title="XGBoost feature importance", template="plotly_dark")
+        fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), title_font_size=17)
+        apply_dashboard_theme(fig)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as exc:
+        st.warning(f"The detailed XGBoost diagnostics could not be displayed: {exc}")
+
+    anomalies = pd.DataFrame(service.get_anomalies_data())
+    st.markdown("#### Potential sales anomalies")
+    if anomalies.empty:
+        st.success("No anomalies were flagged by the current model thresholds.")
+    else:
+        st.dataframe(anomalies, use_container_width=True, hide_index=True)
+
+with tab_data:
+    st.subheader("Transactions")
+    search_text = st.text_input("Search order ID, category, or region", placeholder="e.g. ORD00001 or Electronics")
+    view = filtered.copy()
+    if search_text.strip():
+        needle = search_text.strip().lower()
+        mask = (
+            view["Order ID"].astype(str).str.lower().str.contains(needle, na=False)
+            | view["Category"].astype(str).str.lower().str.contains(needle, na=False)
+            | view["Region"].astype(str).str.lower().str.contains(needle, na=False)
+        )
+        view = view[mask]
+    st.caption(f"Showing {len(view):,} of {len(filtered):,} transactions after filters.")
+    st.dataframe(view.sort_values("Order Date", ascending=False), use_container_width=True, hide_index=True, height=500,
+                 column_config={"Sales": st.column_config.NumberColumn(format="₹%.2f"), "Profit": st.column_config.NumberColumn(format="₹%.2f"), "Unit Price": st.column_config.NumberColumn(format="₹%.2f"), "Order Date": st.column_config.DateColumn(format="DD MMM YYYY")})
+    st.download_button("Download filtered transactions", view.to_csv(index=False).encode("utf-8"), file_name="forecastiq_transactions.csv", mime="text/csv")
+
+with st.expander("ℹ️ Data quality and methodology"):
+    st.markdown(
+        "- **Source:** the bundled sales CSV or a CSV uploaded from the sidebar.\n"
+        "- **Filters:** overview KPIs and business charts respond to the selected date range, categories, and regions.\n"
+        "- **Forecasting:** models are evaluated using a chronological holdout split; future values are estimates based on historical patterns.\n"
+        "- **Missing fields:** when an uploaded CSV omits optional fields such as profit, the dashboard uses safe defaults and should be interpreted accordingly.\n"
+        "- **Privacy:** the Streamlit dashboard reads the local dataset; MongoDB is not required for dashboard analytics."
+    )
+
+st.divider()
+st.caption("ForecastIQ  /  SALES INTELLIGENCE  ·  Forecasts are estimates, not guarantees. Results depend on data quality and historical patterns.")

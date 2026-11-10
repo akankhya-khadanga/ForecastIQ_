@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ForecastIQ accesses Firestore through its trusted Python Admin SDK.
+    // Admin SDK calls bypass these client security rules.
+    // Deny direct client/browser access unless UID-based rules are added deliberately.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
